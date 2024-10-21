@@ -10,7 +10,7 @@ import gleam/result
 import gleam/string
 
 pub type WeatherStation {
-  WeatherStation(
+  Station(
     city: String,
     min: Float,
     max: Float,
@@ -18,9 +18,6 @@ pub type WeatherStation {
     count: Float,
     avg: Float,
   )
-}
-
-pub type Entry {
   Entry(city: String, temp: Float)
 }
 
@@ -33,38 +30,37 @@ pub fn main() {
   let result =
     work(file,0)
     |> list.fold([], fn(stations, line) {
-      wapply_station(line, stations, combine_stations)
+      apply_station(line, stations, combine_stations)
     })
     |> list.map(fn(x) {
-      WeatherStation(
-        city: x.city,
-        min: x.min,
-        max: x.max,
-        total: x.total,
-        count: x.count,
-        avg: x.total /. x.count,
-      )
+      case  x {
+        Station(city: city, min: min, max: max, total: total, count: count, avg: _) -> Station( city: city, min: min, max: max, total: total, count: count, avg: total /. count,)
+        _ -> x
+      }
     })
   result
   |> list.sort(fn(a, b) { string.compare(a.city, b.city) })
   |> list.map(fn(station) {
-    station.city
-    |> string.append("=")
-    |> string.append(
-      { { station.min *. 10.0 } |> float.floor } /. 10.0 |> float.to_string,
-    )
-    |> string.append("/")
-    |> string.append(
-      { { station.avg *. 10.0 } |> float.floor } /. 10.0 |> float.to_string,
-    )
-    |> string.append("/")
-    |> string.append(
-      { { station.max *. 10.0 } |> float.floor } /. 10.0 |> float.to_string,
-    )
+    let assert Ok(_) = case station {
+      Station(city: city, min: min, max: max, total: _, count: _, avg: avg) -> {
+        city
+        |> string.append("=")
+        |> string.append(
+          { { min *. 10.0 } |> float.floor } /. 10.0 |> float.to_string,
+        )
+        |> string.append("/")
+        |> string.append(
+          { { avg *. 10.0 } |> float.floor } /. 10.0 |> float.to_string,
+        )
+        |> string.append("/")
+        |> string.append(
+          { { max *. 10.0 } |> float.floor } /. 10.0 |> float.to_string,
+        ) |> io.debug |> Ok
+      }
+      _ -> Error(Nil)
+    }
   })
-  |> io.debug
 }
-
 fn work(file,count) {
   let chunk_size = 1_000_000
   io.println("chunks " <> count |> int.to_string <> " percent:" <> {chunk_size /1_000_000_000} |> int.to_string)
@@ -99,46 +95,32 @@ fn do_work(lines) {
   })
 }
 
-fn wapply_station(
+
+fn apply_station(
   line: WeatherStation,
   weather_stations: List(WeatherStation),
   update: fn(WeatherStation, WeatherStation) -> WeatherStation,
 ) {
-  let station = case weather_stations{
-    [s, ..] -> s 
-    [] ->  
-      WeatherStation(
-        city: line.city,
-        min: line.min,
-        max: line.max,
+  let assert Ok(station) = case weather_stations, line{
+    [s, ..] ,_-> Ok(s)
+    [], Entry(city: city, temp: temp) ->
+      Station(
+        city:city,
+        min: temp,
+        max: temp,
         total: 0.0,
         count: 1.0,
         avg: 0.0,
-      )
-  }
-
-  case line.city == station.city {
-    True -> [ update(line, station), ..list.rest(weather_stations) |> result.unwrap([]) ]
-    False -> [station, ..wapply_station(line,weather_stations |> list.rest |> result.unwrap([]),update)]
-  }
-}
-
-fn apply_station(
-  line: Entry,
-  weather_stations: List(WeatherStation),
-  update: fn(Entry, WeatherStation) -> WeatherStation,
-) {
-  let station = case weather_stations{
-    [s, ..] -> s 
-    [] ->  
-      WeatherStation(
-        city: line.city,
-        min: line.temp,
-        max: line.temp,
-        total: 0.0,
-        count: 1.0,
-        avg: 0.0,
-      )
+      )|> Ok
+      [], Station(city: city, min: min, max: max, total: _, count: _, avg: _) ->
+      Station(
+        city:city,
+      min: min,
+      max: max,
+      total: 0.0,
+      count: 1.0,
+      avg: 0.0,
+    ) |> Ok
   }
    case line.city == station.city {
     True -> [ update(line, station), ..list.rest(weather_stations) |> result.unwrap([]) ]
@@ -150,28 +132,38 @@ fn combine_stations(
   station: WeatherStation,
   weather_stations: WeatherStation,
 ) -> WeatherStation {
-  WeatherStation(
-    city: station.city,
-    min: float.min(weather_stations.min, station.min),
-    max: float.max(weather_stations.max, station.max),
-    total: weather_stations.total +. station.total,
-    count: weather_stations.count +. station.count,
-    avg: weather_stations.avg,
-  )
+  let assert Ok(return) = case station, weather_stations{
+  Station(city: city, min: min, max: max, total: total, count: count, avg: _),  Station(city: _, min: w_min, max: w_max, total: w_total, count: w_count, avg: w_avg) -> 
+  Station(
+    city: city,
+    min: float.min(w_min, min),
+    max: float.max(w_max, max),
+    total: w_total +. total,
+    count: w_count +. count,
+    avg: w_avg,
+  ) |> Ok
+    _,_ -> Error(Nil)
+    }
+    return
 }
 
+
 fn update_station(
-  station: Entry,
+  station: WeatherStation,
   weather_stations: WeatherStation,
 ) -> WeatherStation {
-  WeatherStation(
-    city: station.city,
-    min: float.min(weather_stations.min, station.temp),
-    max: float.max(weather_stations.max, station.temp),
-    total: weather_stations.total +. station.temp,
-    count: weather_stations.count +. 1.0,
-    avg: weather_stations.avg,
-  )
+  let assert Ok(return) = case station, weather_stations{
+  Entry(city: city, temp: temp), Station(city: _, min: w_min, max: w_max, total: w_total, count: w_count, avg: w_avg) -> Station(
+    city: city,
+    min: float.min(w_min, temp),
+    max: float.max(w_max, temp),
+    total: w_total +. temp,
+    count: w_count +. 1.0,
+    avg: w_avg,
+  ) |> Ok
+  _,_ -> Error(Nil)
+  }
+  return
 }
 
 fn math(line) {
